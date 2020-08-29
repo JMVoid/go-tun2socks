@@ -1,8 +1,10 @@
 package socks
 
 import (
+	"github.com/eycorsican/go-tun2socks/common"
 	"io"
 	"net"
+	"strconv"
 	"sync"
 
 	"golang.org/x/net/proxy"
@@ -16,12 +18,16 @@ type tcpHandler struct {
 
 	proxyHost string
 	proxyPort uint16
+	cache     common.Cache
+	route     common.Route
 }
 
-func NewTCPHandler(proxyHost string, proxyPort uint16) core.TCPConnHandler {
+func NewTCPHandler(proxyHost string, proxyPort uint16, cache common.Cache, route common.Route) core.TCPConnHandler {
 	return &tcpHandler{
 		proxyHost: proxyHost,
 		proxyPort: proxyPort,
+		cache:     cache,
+		route:     route,
 	}
 }
 
@@ -86,12 +92,24 @@ func (h *tcpHandler) relay(lhs, rhs net.Conn) {
 }
 
 func (h *tcpHandler) Handle(conn net.Conn, target *net.TCPAddr) error {
+	var c net.Conn
+	var err error
+
 	dialer, err := proxy.SOCKS5("tcp", core.ParseTCPAddr(h.proxyHost, h.proxyPort).String(), nil, nil)
 	if err != nil {
 		return err
 	}
-
-	c, err := dialer.Dial(target.Network(), target.String())
+	targetIP, targetPort := target.IP, target.Port
+	host, useFallback, found := h.cache.GetHostByIP(targetIP)
+	if found && useFallback {
+		filterTarget := net.JoinHostPort(host, strconv.Itoa(targetPort))
+		c, err = dialer.Dial(target.Network(), filterTarget)
+	} else {
+		c, err = dialer.Dial(target.Network(), target.String())
+		if h.route.AddToTable() {
+			h.route.AddDestWithOrigin(target.String())
+		}
+	}
 	if err != nil {
 		return err
 	}
