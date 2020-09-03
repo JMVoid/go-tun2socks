@@ -20,14 +20,17 @@ type tcpHandler struct {
 	proxyPort uint16
 	cache     common.Cache
 	route     common.Route
+	rules     []common.Rule
 }
 
-func NewTCPHandler(proxyHost string, proxyPort uint16, cache common.Cache, route common.Route) core.TCPConnHandler {
+func NewTCPHandler(proxyHost string, proxyPort uint16, cache common.Cache, route common.Route, rules []common.Rule) core.TCPConnHandler {
+
 	return &tcpHandler{
 		proxyHost: proxyHost,
 		proxyPort: proxyPort,
 		cache:     cache,
 		route:     route,
+		rules:     rules,
 	}
 }
 
@@ -91,6 +94,17 @@ func (h *tcpHandler) relay(lhs, rhs net.Conn) {
 	<-upCh // Wait for uplink done.
 }
 
+func (h *tcpHandler) isDirect(metadata *common.Metadata) bool {
+	for _, rule := range h.rules {
+		if rule.Match(metadata) {
+			if rule.Adapter() == "DIRECT" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (h *tcpHandler) Handle(conn net.Conn, target *net.TCPAddr) error {
 	var c net.Conn
 	var err error
@@ -105,9 +119,14 @@ func (h *tcpHandler) Handle(conn net.Conn, target *net.TCPAddr) error {
 		filterTarget := net.JoinHostPort(host, strconv.Itoa(targetPort))
 		c, err = dialer.Dial(target.Network(), filterTarget)
 	} else {
-		c, err = dialer.Dial(target.Network(), target.String())
-		if h.route.AddToTable() {
+		metaData := &common.Metadata{
+			AddrType: common.AtypIPv4,
+			Host:     "",
+			DstIP:    targetIP,
+		}
+		if h.isDirect(metaData) {
 			h.route.AddDestWithOrigin(target.String())
+			c, err = dialer.Dial(target.Network(), target.String())
 		}
 	}
 	if err != nil {
