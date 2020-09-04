@@ -49,6 +49,8 @@ func newUDPConn(pcb *C.struct_udp_pcb, handler UDPConnHandler, localIP C.ip_addr
 		pending:   make(chan *udpPacket, 64), // To hold the early packets on the connection
 	}
 
+	fmt.Printf("newUdpConn localAddr:%s, remoteAddr:%s\n", localAddr.String(), remoteAddr.String())
+
 	go func() {
 		err := handler.Connect(conn, remoteAddr)
 		if err != nil {

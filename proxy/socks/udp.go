@@ -3,6 +3,7 @@ package socks
 import (
 	"errors"
 	"fmt"
+	"github.com/eycorsican/go-tun2socks/common"
 	"io"
 	"net"
 	"sync"
@@ -24,9 +25,11 @@ type udpHandler struct {
 	tcpConns    map[core.UDPConn]net.Conn
 	remoteAddrs map[core.UDPConn]*net.UDPAddr // UDP relay server addresses
 	timeout     time.Duration
+	route       common.Route
+	rules       []common.Rule
 }
 
-func NewUDPHandler(proxyHost string, proxyPort uint16, timeout time.Duration) core.UDPConnHandler {
+func NewUDPHandler(proxyHost string, proxyPort uint16, timeout time.Duration, route common.Route, rules []common.Rule) core.UDPConnHandler {
 	return &udpHandler{
 		proxyHost:   proxyHost,
 		proxyPort:   proxyPort,
@@ -34,6 +37,8 @@ func NewUDPHandler(proxyHost string, proxyPort uint16, timeout time.Duration) co
 		tcpConns:    make(map[core.UDPConn]net.Conn, 8),
 		remoteAddrs: make(map[core.UDPConn]*net.UDPAddr, 8),
 		timeout:     timeout,
+		route:       route,
+		rules:       rules,
 	}
 }
 
@@ -90,6 +95,15 @@ func (h *udpHandler) Connect(conn core.UDPConn, target *net.UDPAddr) error {
 	if target == nil {
 		return h.connectInternal(conn, "")
 	}
+	metaData := &common.Metadata{
+		AddrType: common.AtypIPv4,
+		Host:     "",
+		DstIP:    target.IP,
+	}
+
+	if h.isDirect(metaData) {
+		h.route.AddDestWithOrigin(target.IP.String())
+	}
 	return h.connectInternal(conn, target.String())
 }
 
@@ -109,7 +123,7 @@ func (h *udpHandler) connectInternal(conn core.UDPConn, dest string) error {
 	}
 
 	c.Write(append([]byte{5, socks5UDPAssociate, 0}, []byte{1, 0, 0, 0, 0, 0, 0}...))
-	
+
 	// read VER REP RSV ATYP BND.ADDR BND.PORT
 	if _, err := io.ReadFull(c, buf[:3]); err != nil {
 		return err
@@ -186,4 +200,14 @@ func (h *udpHandler) Close(conn core.UDPConn) {
 		delete(h.udpConns, conn)
 	}
 	delete(h.remoteAddrs, conn)
+}
+func (h *udpHandler) isDirect(metadata *common.Metadata) bool {
+	for _, rule := range h.rules {
+		if rule.Match(metadata) {
+			if rule.Adapter() == "DIRECT" {
+				return true
+			}
+		}
+	}
+	return false
 }

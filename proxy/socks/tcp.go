@@ -125,9 +125,9 @@ func (h *tcpHandler) Handle(conn net.Conn, target *net.TCPAddr) error {
 			DstIP:    targetIP,
 		}
 		if h.isDirect(metaData) {
-			h.route.AddDestWithOrigin(target.String())
-			c, err = dialer.Dial(target.Network(), target.String())
+			h.route.AddDestWithOrigin(targetIP.String())
 		}
+		c, err = dialer.Dial(target.Network(), target.String())
 	}
 	if err != nil {
 		return err
