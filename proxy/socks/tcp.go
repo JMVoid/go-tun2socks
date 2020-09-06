@@ -114,9 +114,11 @@ func (h *tcpHandler) Handle(conn net.Conn, target *net.TCPAddr) error {
 		return err
 	}
 	targetIP, targetPort := target.IP, target.Port
-	host, useFallback, found := h.cache.GetHostByIP(targetIP)
-	if found && useFallback {
+	host, found := h.cache.GetHostByIP(targetIP)
+	//fmt.Printf("tcp host remote handle [%s]-[%s], %v, \n", targetIP.String(), host, found)
+	if found {
 		filterTarget := net.JoinHostPort(host, strconv.Itoa(targetPort))
+		//fmt.Println(filterTarget)
 		c, err = dialer.Dial(target.Network(), filterTarget)
 	} else {
 		metaData := &common.Metadata{
